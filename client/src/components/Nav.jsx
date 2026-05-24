@@ -1,0 +1,47 @@
+import React, { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { clearAuth, getAuthUser, isLoggedIn, subscribeAuth } from '../utils/auth'
+
+export default function Nav() {
+  const nav = useNavigate()
+  const [user, setUser] = useState(getAuthUser())
+  const [logged, setLogged] = useState(isLoggedIn())
+
+  useEffect(() => subscribeAuth(() => {
+    setUser(getAuthUser())
+    setLogged(isLoggedIn())
+  }), [])
+
+  function handleLogout() {
+    clearAuth()
+    setUser(null)
+    setLogged(false)
+    nav('/login')
+  }
+
+  return (
+    <nav className="border-b border-slate-200 bg-gradient-to-r from-indigo-700 via-violet-700 to-fuchsia-700 text-white shadow-lg">
+      <div className="container mx-auto flex items-center justify-between p-4">
+        <div className="font-semibold text-lg tracking-wide text-white">Event Booking QR</div>
+        <div className="space-x-3">
+          <Link to="/events" className="text-sm text-indigo-50 hover:text-white">Events</Link>
+          {logged ? (
+            <>
+              <Link to="/tickets" className="text-sm text-indigo-50 hover:text-white">My Tickets</Link>
+              <Link to="/scanner" className="text-sm text-indigo-50 hover:text-white">Scanner</Link>
+              {user && user.role === 'admin' && (
+                <Link to="/admin" className="text-sm text-indigo-50 hover:text-white">Admin</Link>
+              )}
+              <button onClick={handleLogout} className="rounded-full border border-white/30 bg-white/10 px-3 py-1 text-sm text-white transition hover:bg-white/20">Logout</button>
+            </>
+          ) : (
+            <>
+              <Link to="/login" className="rounded-full bg-white/10 px-3 py-1 text-sm text-white transition hover:bg-white/20">Login</Link>
+              <Link to="/register" className="rounded-full bg-white px-3 py-1 text-sm font-medium text-indigo-700 transition hover:bg-indigo-50">Register</Link>
+            </>
+          )}
+        </div>
+      </div>
+    </nav>
+  )
+}
