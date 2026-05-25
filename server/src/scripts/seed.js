@@ -21,7 +21,7 @@ async function seed() {
     let admin = await User.findOne({ email: adminEmail });
     if (!admin) {
       const passwordHash = await bcrypt.hash('AdminPass123', 10);
-      admin = await User.create({ name: 'Admin', email: adminEmail, passwordHash, role: 'admin' });
+      admin = await User.create({ name: 'Admin', phone: '+91-9000000001', email: adminEmail, passwordHash, role: 'admin' });
       console.log('Created admin user:', adminEmail, 'password: AdminPass123');
     } else {
       console.log('Admin user already exists:', adminEmail);
@@ -32,10 +32,21 @@ async function seed() {
     let user = await User.findOne({ email: userEmail });
     if (!user) {
       const passwordHash = await bcrypt.hash('UserPass123', 10);
-      user = await User.create({ name: 'Sample User', email: userEmail, passwordHash, role: 'user' });
+      user = await User.create({ name: 'Sample User', phone: '+91-9000000002', email: userEmail, passwordHash, role: 'user' });
       console.log('Created sample user:', userEmail, 'password: UserPass123');
     } else {
       console.log('Sample user already exists:', userEmail);
+    }
+
+    // Staff scanner account
+    const staffEmail = 'staff@example.com';
+    let staff = await User.findOne({ email: staffEmail });
+    if (!staff) {
+      const passwordHash = await bcrypt.hash('StaffPass123', 10);
+      staff = await User.create({ name: 'Staff Scanner', phone: '+91-9000000003', email: staffEmail, passwordHash, role: 'staff' });
+      console.log('Created staff user:', staffEmail, 'password: StaffPass123');
+    } else {
+      console.log('Staff user already exists:', staffEmail);
     }
 
     const sampleEvents = [

@@ -17,7 +17,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50 to-fuchsia-50">
       <Nav />
-      <div className="container mx-auto p-4">
+      <main className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/events" element={<Events />} />
@@ -32,7 +32,7 @@ export default function App() {
           <Route path="/tickets" element={<MyTickets />} />
           <Route path="/scanner" element={<Scanner />} />
         </Routes>
-      </div>
+      </main>
     </div>
   )
 }

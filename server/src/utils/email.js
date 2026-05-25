@@ -45,7 +45,30 @@ function getTransport() {
 }
 
 async function sendMail({ to, subject, text, html, attachments = [] }) {
-  // If RESEND_API_KEY is present, use Resend API (preferred for simple transactional sending)
+  const hasSmtpConfig = Boolean(
+    (process.env.EMAIL_HOST || env.emailHost) &&
+    (process.env.EMAIL_USER || env.emailUser) &&
+    (process.env.EMAIL_PASS || env.emailPass)
+  );
+
+  // Prefer SMTP when configured so the app can send to any recipient address.
+  if (hasSmtpConfig) {
+    const from = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'no-reply@example.com';
+    const transport = getTransport();
+
+    try {
+      const info = await transport.sendMail({ from, to, subject, text, html, attachments });
+      return info;
+    } catch (err) {
+      // normalize error for callers
+      const message = err && err.response && err.response.message ? err.response.message : err.message || String(err);
+      const e = new Error(`Failed to send email: ${message}`);
+      e.original = err;
+      throw e;
+    }
+  }
+
+  // Otherwise fall back to Resend.
   if (process.env.RESEND_API_KEY) {
     try {
       const resend = getResendClient();
@@ -54,6 +77,18 @@ async function sendMail({ to, subject, text, html, attachments = [] }) {
       }
 
       const from = process.env.RESEND_FROM || 'onboarding@resend.dev';
+      const toList = Array.isArray(to) ? to : [to];
+
+      if (from === 'onboarding@resend.dev') {
+        const allowedRecipient = process.env.RESEND_TEST_TO || process.env.EMAIL_FROM || '';
+        if (allowedRecipient) {
+          const normalizedAllowed = String(allowedRecipient).trim().toLowerCase();
+          const allAllowed = toList.every(recipient => String(recipient).trim().toLowerCase() === normalizedAllowed);
+          if (!allAllowed) {
+            throw new Error('Resend onboarding sender can only email your verified test inbox. Set RESEND_FROM to a verified domain sender to email other recipients.');
+          }
+        }
+      }
 
       // If attachments contain a data-url image (our QR), embed it in the html if possible
       let htmlToSend = html || '';
@@ -70,7 +105,7 @@ async function sendMail({ to, subject, text, html, attachments = [] }) {
 
       await resend.emails.send({
         from,
-        to,
+        to: toList,
         subject,
         html: htmlToSend || text,
       });
@@ -83,18 +118,7 @@ async function sendMail({ to, subject, text, html, attachments = [] }) {
     }
   }
 
-  const from = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'no-reply@example.com';
-  const transport = getTransport();
-  try {
-    const info = await transport.sendMail({ from, to, subject, text, html, attachments });
-    return info;
-  } catch (err) {
-    // normalize error for callers
-    const message = err && err.response && err.response.message ? err.response.message : err.message || String(err);
-    const e = new Error(`Failed to send email: ${message}`);
-    e.original = err;
-    throw e;
-  }
+  throw new Error('No email provider configured. Set SMTP credentials or RESEND_API_KEY.');
 }
 
 module.exports = { sendMail };

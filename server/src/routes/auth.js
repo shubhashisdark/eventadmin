@@ -6,7 +6,7 @@ const { signAccess, signRefresh, verifyRefresh } = require('../utils/jwt');
 const router = Router();
 
 router.post('/register', async (req, res) => {
-  const { name, email, password, role } = req.body || {};
+  const { name, phone = '', email, password, role } = req.body || {};
   if (!name || !email || !password || password.length < 8) {
     return res.status(400).json({ message: 'Name, email and password (min 8 chars) are required' });
   }
@@ -16,8 +16,8 @@ router.post('/register', async (req, res) => {
     if (existing) return res.status(409).json({ message: 'Email already registered' });
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = await User.create({ name, email, passwordHash, role: role || 'user' });
-    return res.status(201).json({ id: user._id, name: user.name, email: user.email, role: user.role });
+    const user = await User.create({ name, phone, email, passwordHash, role: role || 'user' });
+    return res.status(201).json({ id: user._id, name: user.name, phone: user.phone, email: user.email, role: user.role });
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }
@@ -37,7 +37,7 @@ router.post('/login', async (req, res) => {
     const access = signAccess({ userId: user._id.toString(), role: user.role });
     const refresh = signRefresh({ userId: user._id.toString(), role: user.role });
 
-    return res.json({ accessToken: access, refreshToken: refresh, user: { id: user._id, name: user.name, email: user.email, role: user.role } });
+    return res.json({ accessToken: access, refreshToken: refresh, user: { id: user._id, name: user.name, phone: user.phone, email: user.email, role: user.role } });
   } catch (err) {
     return res.status(500).json({ message: err.message });
   }

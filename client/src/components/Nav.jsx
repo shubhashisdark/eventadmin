@@ -21,16 +21,15 @@ export default function Nav() {
 
   return (
     <nav className="border-b border-slate-200 bg-gradient-to-r from-indigo-700 via-violet-700 to-fuchsia-700 text-white shadow-lg">
-      <div className="container mx-auto flex items-center justify-between p-4">
-        <div className="font-semibold text-lg tracking-wide text-white">Event Booking QR</div>
-        <div className="space-x-3">
-          <Link to="/events" className="text-sm text-indigo-50 hover:text-white">Events</Link>
+      <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+        <div className="font-semibold text-base tracking-wide text-white sm:text-lg">Event Booking QR</div>
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end sm:gap-3">
+          <Link to="/events" className="rounded-full px-3 py-1 text-sm text-indigo-50 transition hover:bg-white/10 hover:text-white">Events</Link>
           {logged ? (
             <>
-              <Link to="/tickets" className="text-sm text-indigo-50 hover:text-white">My Tickets</Link>
-              <Link to="/scanner" className="text-sm text-indigo-50 hover:text-white">Scanner</Link>
+              <Link to="/tickets" className="rounded-full px-3 py-1 text-sm text-indigo-50 transition hover:bg-white/10 hover:text-white">My Tickets</Link>
               {user && user.role === 'admin' && (
-                <Link to="/admin" className="text-sm text-indigo-50 hover:text-white">Admin</Link>
+                <Link to="/admin" className="rounded-full px-3 py-1 text-sm text-indigo-50 transition hover:bg-white/10 hover:text-white">Admin</Link>
               )}
               <button onClick={handleLogout} className="rounded-full border border-white/30 bg-white/10 px-3 py-1 text-sm text-white transition hover:bg-white/20">Logout</button>
             </>

@@ -5,6 +5,7 @@ const Ticket = require('../models/Ticket');
 const Event = require('../models/Event');
 const { authenticate } = require('../middleware/auth');
 const { sendMail } = require('../utils/email');
+const { buildTicketEmail } = require('../utils/ticketEmail');
 const { signAccess } = require('../utils/jwt');
 
 const router = Router();
@@ -35,6 +36,34 @@ router.post('/', authenticate, async (req, res) => {
     // increment registered count (best-effort)
     await Event.findByIdAndUpdate(eventId, { $inc: { registeredCount: 1 } });
 
+    const [user, ticketType] = await Promise.all([
+      require('../models/User').findById(req.user.id).lean(),
+      Promise.resolve(event.ticketTypes?.find(tt => String(tt._id) === String(ticketTypeId)) || null)
+    ]);
+
+    const emailDetails = buildTicketEmail({
+      userName: user?.name || 'there',
+      event,
+      ticketType,
+      ticket: {
+        _id: ticket._id,
+        bookingId: booking._id,
+        isCheckedIn: false
+      },
+      qrDataUrl
+    });
+
+    const qrMatches = qrDataUrl.match(/^data:(image\/\w+);base64,(.*)$/);
+    const attachments = qrMatches ? [{ filename: 'ticket.png', content: qrMatches[2], encoding: 'base64', contentType: qrMatches[1] }] : [];
+
+    sendMail({
+      to: user?.email || req.user.email,
+      subject: `Your ticket for ${event.title}`,
+      text: emailDetails.text,
+      html: emailDetails.html,
+      attachments
+    }).catch(err => console.error('Booking email failed:', err.message));
+
     return res.status(201).json({ bookingId: booking._id, ticketId: ticket._id, qrCode: qrDataUrl });
   } catch (err) {
     // handle unique booking constraint
@@ -46,7 +75,7 @@ router.post('/', authenticate, async (req, res) => {
 router.get('/me', authenticate, async (req, res) => {
   try {
     const bookings = await Booking.find({ userId: req.user.id }).populate('eventId').lean();
-    const tickets = await Ticket.find({ userId: req.user.id }).lean();
+    const tickets = await Ticket.find({ userId: req.user.id }).populate('eventId').populate('bookingId').lean();
     return res.json({ bookings, tickets });
   } catch (err) {
     return res.status(500).json({ message: err.message });
@@ -103,11 +132,26 @@ router.post('/:id/resend', authenticate, async (req, res) => {
       });
     }
 
-    const subject = `Your ticket for ${event.title}`;
-    const text = `Hello ${userDoc.name},\n\nAttached is your ticket for ${event.title} on ${new Date(event.date).toLocaleString()}.`;
-    const html = `<p>Hello ${userDoc.name},</p><p>Attached is your ticket for <strong>${event.title}</strong> on ${new Date(event.date).toLocaleString()}.</p><p><img src="${qrDataUrl}" width="200"/></p>`;
+    const ticketType = Array.isArray(event.ticketTypes) ? event.ticketTypes.find(tt => String(tt._id) === String(booking.ticketTypeId)) : null;
+    const emailDetails = buildTicketEmail({
+      userName: userDoc.name,
+      event,
+      ticketType,
+      ticket: {
+        _id: ticket._id,
+        bookingId: booking._id,
+        isCheckedIn: ticket.isCheckedIn || false
+      },
+      qrDataUrl
+    });
 
-    await sendMail({ to: userDoc.email, subject, text, html, attachments });
+    await sendMail({
+      to: userDoc.email,
+      subject: `Your ticket for ${event.title}`,
+      text: emailDetails.text,
+      html: emailDetails.html,
+      attachments
+    });
 
     return res.json({ message: 'Email resent' });
   } catch (err) {

@@ -1,14 +1,21 @@
 const { Router } = require('express');
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const QRCode = require('qrcode');
 const Event = require('../models/Event');
+const User = require('../models/User');
 const Booking = require('../models/Booking');
 const Ticket = require('../models/Ticket');
 const Checkin = require('../models/Checkin');
 const { authenticate, requireRole } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
+const { sendMail } = require('../utils/email');
 const { createEventSchema } = require('../validation/eventSchema');
 const multer = require('multer');
 const streamifier = require('streamifier');
 const cloudinary = require('cloudinary').v2;
+const { signAccess } = require('../utils/jwt');
+const { buildTicketEmail } = require('../utils/ticketEmail');
 
 const upload = multer();
 
@@ -94,6 +101,7 @@ router.get('/events/:id/export', authenticate, requireRole('admin'), asyncHandle
     'bookingId',
     'userId',
     'userName',
+    'phone',
     'userEmail',
     'eventId',
     'eventTitle',
@@ -111,6 +119,7 @@ router.get('/events/:id/export', authenticate, requireRole('admin'), asyncHandle
       t.bookingId?._id || '',
       t.userId?._id || '',
       t.userId?.name || '',
+      t.userId?.phone || '',
       t.userId?.email || '',
       event._id,
       event.title,
@@ -128,6 +137,98 @@ router.get('/events/:id/export', authenticate, requireRole('admin'), asyncHandle
   res.write(headers.join(',') + '\n');
   for (const r of rows) res.write(r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',') + '\n');
   res.end();
+}));
+
+// Manual customer booking creation for an event
+router.post('/events/:id/customers', authenticate, requireRole('admin'), asyncHandler(async (req, res) => {
+  const eventId = req.params.id;
+  const { name, phone = '', email, ticketTypeId } = req.body || {};
+
+  if (!name || !email) {
+    return res.status(400).json({ message: 'name and email are required' });
+  }
+
+  const event = await Event.findById(eventId);
+  if (!event) return res.status(404).json({ message: 'Event not found' });
+
+  if (!Array.isArray(event.ticketTypes) || event.ticketTypes.length === 0) {
+    return res.status(400).json({ message: 'Add at least one ticket option before creating a customer booking' });
+  }
+
+  const selectedTicketTypeId = ticketTypeId || event.ticketTypes[0]._id;
+  const ticketType = event.ticketTypes.find(tt => String(tt._id) === String(selectedTicketTypeId));
+  if (!ticketType) {
+    return res.status(400).json({ message: 'Selected ticket type is not valid for this event' });
+  }
+
+  if (event.registeredCount >= event.capacity) {
+    return res.status(409).json({ message: 'Event is full' });
+  }
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+  let user = await User.findOne({ email: normalizedEmail });
+  if (!user) {
+    const guestPassword = crypto.randomBytes(12).toString('hex');
+    const passwordHash = await bcrypt.hash(guestPassword, 10);
+    user = await User.create({ name, phone, email: normalizedEmail, passwordHash, role: 'user' });
+  } else {
+    user.name = name;
+    user.phone = phone;
+    await user.save();
+  }
+
+  const existingBooking = await Booking.findOne({ userId: user._id, eventId: event._id });
+  if (existingBooking) {
+    return res.status(409).json({ message: 'This customer already has a booking for this event' });
+  }
+
+  const booking = await Booking.create({ userId: user._id, eventId: event._id, ticketTypeId: ticketType._id });
+  const ticket = await Ticket.create({ bookingId: booking._id, userId: user._id, eventId: event._id, qrPayload: 'pending' });
+
+  const payloadJwt = signAccess(
+    { ticketId: ticket._id.toString(), eventId: event._id.toString(), userId: user._id.toString() },
+    { expiresIn: '365d' }
+  );
+  const qrCodeBase64 = await QRCode.toDataURL(payloadJwt);
+
+  ticket.qrPayload = payloadJwt;
+  ticket.qrCodeBase64 = qrCodeBase64;
+  await ticket.save();
+
+  await Event.findByIdAndUpdate(event._id, { $inc: { registeredCount: 1 } });
+
+  const emailDetails = buildTicketEmail({
+    userName: user.name,
+    event,
+    ticketType,
+    ticket: {
+      _id: ticket._id,
+      bookingId: booking._id,
+      isCheckedIn: false
+    },
+    qrDataUrl: qrCodeBase64
+  });
+
+  const qrMatches = qrCodeBase64.match(/^data:(image\/\w+);base64,(.*)$/);
+  const attachments = qrMatches ? [{ filename: 'ticket.png', content: qrMatches[2], encoding: 'base64', contentType: qrMatches[1] }] : [];
+
+  sendMail({
+    to: user.email,
+    subject: `Your ticket for ${event.title}`,
+    text: emailDetails.text,
+    html: emailDetails.html,
+    attachments
+  }).catch(err => console.error('Customer booking email failed:', err.message));
+
+  return res.status(201).json({
+    message: 'Customer booking created',
+    user: { id: user._id, name: user.name, phone: user.phone || '', email: user.email },
+    event: { id: event._id, title: event.title, venue: event.venue, date: event.date },
+    ticketType: { id: ticketType._id, name: ticketType.name, price: ticketType.price || 0 },
+    booking: { id: booking._id, status: booking.status },
+    ticket: { id: ticket._id, qrPayload: payloadJwt, qrCodeBase64 },
+    qrCode: qrCodeBase64
+  });
 }));
 
 // Upload banner to Cloudinary and update event.bannerUrl

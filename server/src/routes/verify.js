@@ -2,6 +2,8 @@ const { Router } = require('express');
 const { verifyAccess } = require('../utils/jwt');
 const Ticket = require('../models/Ticket');
 const Checkin = require('../models/Checkin');
+const Event = require('../models/Event');
+const User = require('../models/User');
 const { authenticate, requireRole } = require('../middleware/auth');
 
 const router = Router();
@@ -19,7 +21,7 @@ router.post('/scan', authenticate, requireRole('staff'), async (req, res) => {
       return res.status(400).json({ status: 'invalid', message: 'Malformed ticket payload' });
     }
 
-    const ticket = await Ticket.findById(ticketId);
+    const ticket = await Ticket.findById(ticketId).lean();
     if (!ticket) {
       await Checkin.create({ ticketId: null, eventId: eventId || null, scannedBy: req.user.id, result: 'invalid', ipAddress: req.ip });
       return res.status(404).json({ status: 'invalid', message: 'Ticket not found' });
@@ -38,9 +40,18 @@ router.post('/scan', authenticate, requireRole('staff'), async (req, res) => {
       return res.status(409).json({ status: 'duplicate', message: 'Ticket already checked-in' });
     }
 
+    const event = await Event.findById(updated.eventId).lean();
+    const customer = await User.findById(updated.userId).lean();
     await Checkin.create({ ticketId: updated._id, eventId: updated.eventId, scannedBy: req.user.id, result: 'valid', ipAddress: req.ip });
 
-    return res.json({ status: 'valid', ticketId: updated._id, checkedInAt: updated.checkedInAt });
+    return res.json({
+      status: 'valid',
+      ticketId: updated._id,
+      bookingId: updated.bookingId,
+      checkedInAt: updated.checkedInAt,
+      customer: customer ? { id: customer._id, name: customer.name, phone: customer.phone || '', email: customer.email } : null,
+      event: event ? { id: event._id, title: event.title, venue: event.venue, date: event.date } : null
+    });
   } catch (err) {
     return res.status(401).json({ status: 'invalid', message: 'Invalid or expired QR token' });
   }
